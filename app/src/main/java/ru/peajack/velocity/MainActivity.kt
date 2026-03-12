@@ -1,6 +1,14 @@
 package ru.peajack.velocity
 
 import android.Manifest
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.activity.compose.BackHandler
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
@@ -16,7 +24,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,6 +86,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -96,9 +104,8 @@ import ru.peajack.velocity.ui.theme.Gradient1
 import ru.peajack.velocity.ui.theme.Gradient2
 import ru.peajack.velocity.ui.theme.Green69
 import ru.peajack.velocity.ui.theme.VelocityTheme
-import ru.peajack.velocity.ui.theme.surfaceContainerDark
-import ru.peajack.velocity.ui.theme.surfaceContainerLight
 import kotlin.math.roundToInt
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,6 +118,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+data class RouteData(
+    val name: String,
+    val description: String,
+    val length: Float,
+    val time: String,
+    val heightAmplitude: Int,
+    val hardness: String,
+    val ratio: Float,
+    val comments: Int,
+    val image: Int
+)
+
+data class GuideData(
+    val name: String,
+    val id: Int,
+    val tag: String,
+    val time: String,
+    val image: Int,
+    val contentRes: Int
+)
 
 @Composable
 fun VelocityApp() {
@@ -175,9 +203,11 @@ fun RoutesDestination() {
         val hasPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (hasPermission) {
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val locationManager =
+                context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             try {
-                val provider = if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) LocationManager.NETWORK_PROVIDER else LocationManager.GPS_PROVIDER
+                val provider =
+                    if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) LocationManager.NETWORK_PROVIDER else LocationManager.GPS_PROVIDER
                 val location = locationManager.getLastKnownLocation(provider)
                 if (location != null) {
                     coordinates = Pair(location.latitude, location.longitude)
@@ -195,16 +225,34 @@ fun RoutesDestination() {
     }
 
     LaunchedEffect(Unit) {
-        val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasFine = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
 
         if (!hasFine && !hasCoarse) {
-            locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
         } else {
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val provider = if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) LocationManager.NETWORK_PROVIDER else LocationManager.GPS_PROVIDER
-            val location = try { locationManager.getLastKnownLocation(provider) } catch (e: SecurityException) { null }
-            coordinates = location?.let { Pair(it.latitude, it.longitude) } ?: Pair(56.4977, 84.9744)
+            val locationManager =
+                context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val provider =
+                if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) LocationManager.NETWORK_PROVIDER else LocationManager.GPS_PROVIDER
+            val location = try {
+                locationManager.getLastKnownLocation(provider)
+            } catch (e: SecurityException) {
+                null
+            }
+            coordinates =
+                location?.let { Pair(it.latitude, it.longitude) } ?: Pair(56.4977, 84.9744)
         }
     }
 
@@ -224,7 +272,10 @@ fun RoutesDestination() {
                             val body = response.body?.string()
                             if (body != null) {
                                 val json = JSONObject(body)
-                                val currentData = json.getJSONObject("properties").getJSONArray("timeseries").getJSONObject(0).getJSONObject("data").getJSONObject("instant").getJSONObject("details")
+                                val currentData =
+                                    json.getJSONObject("properties").getJSONArray("timeseries")
+                                        .getJSONObject(0).getJSONObject("data")
+                                        .getJSONObject("instant").getJSONObject("details")
                                 val temp = currentData.getDouble("air_temperature")
                                 val wind = currentData.getDouble("wind_speed")
                                 weatherTemp = "$temp °C"
@@ -243,169 +294,287 @@ fun RoutesDestination() {
         }
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            var isSearch by remember { mutableStateOf(false) }
-            var value by remember { mutableStateOf("") }
+    val routesList = listOf(
+        RouteData(
+            "По городу",
+            "Разумный маршрут для городской прогулки",
+            16.4f,
+            "3 часа",
+            12,
+            "Простой",
+            4.8f,
+            243,
+            R.drawable.tomsk
+        ),
+        RouteData(
+            "Буревестник",
+            "Поездка по лесопарку",
+            13.2f,
+            "2,5 часа",
+            24,
+            "Средний",
+            4.9f,
+            176,
+            R.drawable.burevestnik
+        ),
+        RouteData(
+            "Буревестник",
+            "Поездка по лесопарку",
+            13.2f,
+            "2,5 часа",
+            24,
+            "Средний",
+            4.9f,
+            176,
+            R.drawable.burevestnik
+        )
+    )
 
-            Crossfade(
-                modifier = Modifier.animateContentSize(),
-                targetState = isSearch,
-                label = "Поиск маршрутов..."
-            ) { target ->
-                if (!target) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                "ВелоСити",
-                                fontWeight = FontWeight.ExtraBold,
-                                color = Color.White
-                            )
-                        },
-                        modifier = Modifier.background(
-                            brush = Gradient1
-                        ),
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent
-                        ),
-                        actions = { IconButtonX(Icons.Filled.Search) { isSearch = !isSearch } },
-                        scrollBehavior = scrollBehavior,
-                    )
-                } else {
-                    TextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .windowInsetsPadding(TopAppBarDefaults.windowInsets)
-                            .layout { measurable, constraints ->
-                                val placeable = measurable.measure(constraints)
-                                val height =
-                                    placeable.height * (1 - scrollBehavior.state.collapsedFraction)
-                                layout(placeable.width, height.roundToInt()) {
-                                    placeable.place(0, 0)
-                                }
-                            },
-                        value = value,
-                        placeholder = { Text("Поиск маршрутов...") },
-                        onValueChange = { value = it },
-                        leadingIcon = {
-                            IconButtonX(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                MaterialTheme.colorScheme.onSurface
-                            ) {
-                                isSearch = !isSearch
-                            }
-                        },
-                        trailingIcon = if (value.isNotBlank()) {
-                            { IconButtonX(Icons.Filled.Close) { value = "" } }
-                        } else {
-                            null
-                        }
-                    )
-                }
+    var selectedRoute by remember { mutableStateOf<RouteData?>(null) }
+
+    AnimatedContent(
+        targetState = selectedRoute,
+        transitionSpec = {
+            // Если открываем детали маршрута (targetState != null)
+            if (targetState != null) {
+                // Новый экран выезжает справа налево, старый уезжает влево
+                (slideInHorizontally(animationSpec = tween(300)) { width -> width } + fadeIn()) togetherWith
+                        (slideOutHorizontally(animationSpec = tween(300)) { width -> -width } + fadeOut())
+            } else {
+                // Если возвращаемся назад (targetState == null)
+                // Возвращаем список слева направо, экран деталей уезжает вправо
+                (slideInHorizontally(animationSpec = tween(300)) { width -> -width } + fadeIn()) togetherWith
+                        (slideOutHorizontally(animationSpec = tween(300)) { width -> width } + fadeOut())
             }
         },
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(Modifier.fillMaxWidth().padding(20.dp)) {
-                Text(text = "Погода сегодня", style = MaterialTheme.typography.headlineLarge)
-            }
-            ElevatedCard(
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                modifier = Modifier.padding(20.dp).fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-            ) {
-                Box(Modifier.fillMaxWidth().background(brush = Gradient2)) {
-                    Text(text = weatherDesc, modifier = Modifier.padding(16.dp).align(Alignment.CenterStart), fontSize = 20.sp, color = Color.White)
-                    Text(text = weatherTemp, modifier = Modifier.padding(16.dp).align(Alignment.CenterEnd), style = MaterialTheme.typography.displayLarge, color = Color.White)
+        label = "RouteTransitionAnimation" // Опциональный лейбл для отладки
+    ) { targetRoute ->
+
+        if (targetRoute != null) {
+            RouteDetailScreen(route = targetRoute!!, onBack = { selectedRoute = null })
+        } else {
+            Scaffold(
+                modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+                topBar = {
+                    var isSearch by remember { mutableStateOf(false) }
+                    var value by remember { mutableStateOf("") }
+
+                    Crossfade(
+                        modifier = Modifier.animateContentSize(),
+                        targetState = isSearch,
+                        label = "Поиск маршрутов..."
+                    ) { target ->
+                        if (!target) {
+                            TopAppBar(
+                                title = {
+                                    Text(
+                                        "ВелоСити",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.White
+                                    )
+                                },
+                                modifier = Modifier.background(
+                                    brush = Gradient1
+                                ),
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = Color.Transparent
+                                ),
+                                actions = {
+                                    IconButtonX(Icons.Filled.Search) {
+                                        isSearch = !isSearch
+                                    }
+                                },
+                                scrollBehavior = scrollBehavior,
+                            )
+                        } else {
+                            TextField(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .windowInsetsPadding(TopAppBarDefaults.windowInsets)
+                                    .layout { measurable, constraints ->
+                                        val placeable = measurable.measure(constraints)
+                                        val height =
+                                            placeable.height * (1 - scrollBehavior.state.collapsedFraction)
+                                        layout(placeable.width, height.roundToInt()) {
+                                            placeable.place(0, 0)
+                                        }
+                                    },
+                                value = value,
+                                placeholder = { Text("Поиск маршрутов...") },
+                                onValueChange = { value = it },
+                                leadingIcon = {
+                                    IconButtonX(
+                                        Icons.AutoMirrored.Filled.ArrowBack,
+                                        MaterialTheme.colorScheme.onSurface
+                                    ) {
+                                        isSearch = !isSearch
+                                    }
+                                },
+                                trailingIcon = if (value.isNotBlank()) {
+                                    { IconButtonX(Icons.Filled.Close) { value = "" } }
+                                } else {
+                                    null
+                                }
+                            )
+                        }
+                    }
+                },
+            ) { innerPadding ->
+                Column(
+                    modifier = Modifier
+                        .padding(innerPadding)
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Text(
+                            text = "Погода сегодня",
+                            style = MaterialTheme.typography.headlineLarge
+                        )
+                    }
+                    ElevatedCard(
+                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                        modifier = Modifier
+                            .padding(20.dp)
+                            .fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(brush = Gradient2)
+                        ) {
+                            Text(
+                                text = weatherDesc,
+                                modifier = Modifier
+                                    .padding(16.dp)
+                                    .align(Alignment.CenterStart),
+                                fontSize = 20.sp,
+                                color = Color.White
+                            )
+                            Text(
+                                text = weatherTemp,
+                                modifier = Modifier
+                                    .padding(16.dp)
+                                    .align(Alignment.CenterEnd),
+                                style = MaterialTheme.typography.displayLarge,
+                                color = Color.White
+                            )
+                        }
+                    }
+
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Text(
+                            text = "Популярные маршруты",
+                            style = MaterialTheme.typography.headlineLarge
+                        )
+                    }
+
+                    // Отрисовка маршрутов из списка
+                    routesList.forEach { route ->
+                        RouteCard(route = route, onClick = { selectedRoute = route })
+                    }
                 }
             }
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
-                Text(text = "Популярные маршруты", style = MaterialTheme.typography.headlineLarge)
-            }
-            RouteCard(
-                "По городу",
-                "Разумный маршрут для городской прогулки",
-                16.4f,
-                "3 часа",
-                12,
-                "Простой",
-                4.8f,
-                243,
-                R.drawable.tomsk
-            )
-            RouteCard(
-                "Буревестник",
-                "Поездка по лесопарку",
-                13.2f,
-                "2,5 часа",
-                24,
-                "Средний",
-                4.9f,
-                176,
-                R.drawable.burevestnik
-            )
-            RouteCard(
-                "Буревестник",
-                "Поездка по лесопарку",
-                13.2f,
-                "2,5 часа",
-                24,
-                "Средний",
-                4.9f,
-                176,
-                R.drawable.burevestnik
-            )
         }
     }
 }
 
 @Composable
-fun RouteCard(
-    name: String,
-    description: String,
-    length: Float,
-    time: String,
-    heightAmplitude: Number,
-    hardness: String,
-    ratio: Float,
-    comments: Number,
-    image: Int
-) {
+fun RouteCard(route: RouteData, onClick: () -> Unit) {
     Column {
         ElevatedCard(
-            elevation = CardDefaults.cardElevation(
-                defaultElevation = 6.dp
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
             ),
             modifier = Modifier
                 .padding(20.dp)
                 .fillMaxWidth()
+                .clickable { onClick() } // Добавлен обработчик нажатия
         ) {
             Image(
-                painter = painterResource(id = image),
+                painter = painterResource(id = route.image),
                 contentDescription = "none",
                 contentScale = ContentScale.FillWidth,
                 modifier = Modifier.aspectRatio(16f / 9f)
             )
             Text(
-                text = name,
-                modifier = Modifier
-                    .padding(16.dp),
+                text = route.name,
+                modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.titleLarge
             )
             Text(
-                text = description,
+                text = route.description,
                 modifier = Modifier.padding(16.dp, 0.dp, 16.dp, 16.dp)
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RouteDetailScreen(route: RouteData, onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(route.name) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Image(
+                painter = painterResource(id = route.image),
+                contentDescription = null,
+                contentScale = ContentScale.FillWidth,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+            )
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = route.description, style = MaterialTheme.typography.bodyLarge)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(text = "Длина: ${route.length} км")
+                Text(text = "Время: ${route.time}")
+                Text(text = "Сложность: ${route.hardness}")
+                Text(text = "Перепад высот: ${route.heightAmplitude} м")
+                Text(text = "Оценка: ${route.ratio} (${route.comments} отзывов)")
+
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(text = "Маршрут на карте", style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Интерактивная заглушка карты
+                Image(
+                    painter = painterResource(id = R.drawable.tomsk), // Ваша заглушка
+                    contentDescription = "Карта маршрута",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                )
+            }
         }
     }
 }
@@ -417,7 +586,7 @@ fun InfoCard(quantity: String, what: String, icon: Int) {
             defaultElevation = 6.dp
         ),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = if (isSystemInDarkTheme()) surfaceContainerDark else surfaceContainerLight
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
         )
     ) {
         Icon(
@@ -449,34 +618,107 @@ fun GuideCard(
     id: Int,
     tag: String,
     time: String,
-    image: Int
+    image: Int,
+    onClick: () -> Unit // Добавляем этот параметр
 ) {
-    Column {
-        ElevatedCard(
-            elevation = CardDefaults.cardElevation(
-                defaultElevation = 6.dp
-            ),
+    ElevatedCard(
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 6.dp
+        ),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .fillMaxWidth()
+            .clickable { onClick() } // Делаем кликабельной
+    ) {
+        Image(
+            painter = painterResource(id = image),
+            contentDescription = "none",
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier.aspectRatio(16f / 9f)
+        )
+        SuggestionChip(
+            onClick = {},
+            label = { Text(tag) },
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        Text(
+            text = name,
             modifier = Modifier
-                .padding(20.dp)
-                .fillMaxWidth()
+                .padding(8.dp, 0.dp, 8.dp, 16.dp),
+            style = MaterialTheme.typography.titleLarge
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GuideDetailScreen(guide: GuideData, onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(text = "Гайд") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
         ) {
+            // Картинка гайда
             Image(
-                painter = painterResource(id = image),
-                contentDescription = "none",
-                contentScale = ContentScale.FillWidth,
-                modifier = Modifier.aspectRatio(16f / 9f)
-            )
-            SuggestionChip(
-                onClick = {},
-                label = { Text(tag) },
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-            Text(
-                text = name,
+                painter = painterResource(id = guide.image),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .padding(8.dp, 0.dp, 8.dp, 16.dp),
-                style = MaterialTheme.typography.titleLarge
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
             )
+
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Тег и время чтения
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = guide.tag,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Text(
+                        text = guide.time,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Заголовок гайда
+                Text(
+                    text = guide.name,
+                    style = MaterialTheme.typography.headlineMedium
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Сам текст гайда из ресурсов
+                Text(
+                    text = stringResource(id = guide.contentRes),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
         }
     }
 }
@@ -511,68 +753,155 @@ fun MapDestination() {
 }
 
 @Composable
-fun FilterChip(tag: String) {
-    var selected by remember { mutableStateOf(false) }
-
+fun CustomFilterChip(tag: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(
-        onClick = { selected = !selected },
-        label = {
-            Text(tag)
-        },
+        onClick = onClick,
+        label = { Text(tag) },
         selected = selected,
         leadingIcon = if (selected) {
             {
                 Icon(
                     imageVector = Icons.Filled.Done,
-                    contentDescription = "Done icon",
+                    contentDescription = "Done",
                     modifier = Modifier.size(FilterChipDefaults.IconSize)
                 )
             }
-        } else {
-            null
-        },
+        } else null,
         modifier = Modifier.padding(8.dp)
     )
 }
 
 @Composable
 fun GuidesDestination() {
-    Scaffold { innerPadding ->
-        Column(modifier = Modifier
-            .padding(innerPadding)
-            .verticalScroll(rememberScrollState())) {
-            Text(
-                text = "Гайды и советы",
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.headlineLarge
-            )
-            Text(
-                text = "Полезная информация для велосипедистов",
-                modifier = Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                FilterChip("Обслуживание")
-                FilterChip("Безопасность")
-                FilterChip("Снаряжение")
-                FilterChip("Советы")
+    // Временно используем R.string.app_name как заглушку для текста (замените на свои R.string.ваша_строка)
+    val guidesList = listOf(
+        GuideData(
+            "Базовое обслуживание велосипеда",
+            1,
+            "Обслуживание",
+            "4 мин.",
+            R.drawable.cycle_service,
+            R.string.cycle_service
+        ),
+        GuideData(
+            "Безопасность в дороге",
+            2,
+            "Безопасность",
+            "6 мин.",
+            R.drawable.safe_road,
+            R.string.safe_road
+        ),
+        GuideData(
+            "Как выбрать велосипед",
+            3,
+            "Снаряжение",
+            "6 мин.",
+            R.drawable.cycle_bying,
+            R.string.cycle_bying
+        ),
+        GuideData(
+            "Советы для дальних поездок",
+            4,
+            "Советы",
+            "5 мин.",
+            R.drawable.far_ride,
+            R.string.far_ride
+        )
+    )
+
+    val allTags = listOf("Обслуживание", "Безопасность", "Снаряжение", "Советы")
+    var selectedTags by remember { mutableStateOf(setOf<String>()) }
+
+    // Состояние для выбранного гайда (null = открыт список, не null = открыты детали)
+    var selectedGuide by remember { mutableStateOf<GuideData?>(null) }
+
+    val filteredGuides =
+        if (selectedTags.isEmpty()) guidesList else guidesList.filter { it.tag in selectedTags }
+
+    // Анимация перехода между списком и деталями
+    AnimatedContent(
+        targetState = selectedGuide,
+        transitionSpec = {
+            if (targetState != null) {
+                // Открытие деталей: выезжает справа
+                (slideInHorizontally(animationSpec = tween(300)) { width -> width } + fadeIn()) togetherWith
+                        (slideOutHorizontally(animationSpec = tween(300)) { width -> -width } + fadeOut())
+            } else {
+                // Возврат к списку: выезжает слева
+                (slideInHorizontally(animationSpec = tween(300)) { width -> -width } + fadeIn()) togetherWith
+                        (slideOutHorizontally(animationSpec = tween(300)) { width -> width } + fadeOut())
             }
-            GuideCard(
-                "Базовое обслуживание велосипеда",
-                1,
-                "Обслуживание",
-                "5 мин.",
-                R.drawable.cycle_service
-            )
-            GuideCard("Безопасность в дороге", 2, "Безопасность", "4 мин.", R.drawable.safe_road)
-            GuideCard("Как выбрать велосипед", 3, "Снаряжение", "6 мин.", R.drawable.cycle_bying)
-            GuideCard("Советы для дальних поездок", 4, "Советы", "5 мин.", R.drawable.far_ride)
+        },
+        label = "GuideTransitionAnimation"
+    ) { targetGuide ->
+        if (targetGuide != null) {
+            // Экран деталей гайда
+            GuideDetailScreen(guide = targetGuide, onBack = { selectedGuide = null })
+        } else {
+            // Главный экран гайдов со списком
+            Scaffold { innerPadding ->
+                Column(
+                    modifier = Modifier
+                        .padding(innerPadding)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = "Гайды и советы",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.headlineLarge
+                    )
+                    Text(
+                        text = "Полезная информация для велосипедистов",
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+
+                    // Блок с Chips для фильтрации
+                    Row(
+                        modifier = Modifier
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                    ) {
+                        allTags.forEach { tag ->
+                            CustomFilterChip( // Вызов компонента из прошлого шага
+                                tag = tag,
+                                selected = selectedTags.contains(tag),
+                                onClick = {
+                                    selectedTags = if (selectedTags.contains(tag)) {
+                                        selectedTags - tag
+                                    } else {
+                                        selectedTags + tag
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    // Вывод отфильтрованных карточек
+                    filteredGuides.forEach { guide ->
+                        GuideCard(
+                            name = guide.name,
+                            id = guide.id,
+                            tag = guide.tag,
+                            time = guide.time,
+                            image = guide.image,
+                            onClick = {
+                                selectedGuide = guide
+                            } // Передаем нажатие для смены состояния
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-fun ProfileMenuItem(icon: ImageVector, text: String, color: Color = MaterialTheme.colorScheme.onSurface) {
+fun ProfileMenuItem(
+    icon: ImageVector,
+    text: String,
+    color: Color = MaterialTheme.colorScheme.onSurface
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -589,8 +918,11 @@ fun ProfileMenuItem(icon: ImageVector, text: String, color: Color = MaterialThem
 @Composable
 fun ProfileDestination() {
     Scaffold { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).verticalScroll(rememberScrollState())) {
-
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+        ) {
             Column(
                 modifier = Modifier
                     .background(brush = Gradient1)
@@ -620,7 +952,7 @@ fun ProfileDestination() {
                     color = Color.White
                 )
             }
-
+            Spacer(modifier = Modifier.height(24.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -634,7 +966,11 @@ fun ProfileDestination() {
             ProfileMenuItem(icon = Icons.Default.Settings, text = "Настройки аккаунта")
             ProfileMenuItem(icon = Icons.Default.Favorite, text = "Избранные маршруты")
             ProfileMenuItem(icon = Icons.Default.Notifications, text = "Уведомления")
-            ProfileMenuItem(icon = Icons.Default.ExitToApp, text = "Выйти из аккаунта", color = Color.Red)
+            ProfileMenuItem(
+                icon = Icons.Default.ExitToApp,
+                text = "Выйти из аккаунта",
+                color = Color.Red
+            )
         }
     }
 }
